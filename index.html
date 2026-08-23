@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obsidian Vault Image Organizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="unsupportedBanner" class="banner banner-error" hidden>
+    This browser doesn't support the File System Access API, so this tool can't read or write your vault.
+    Open this file in a recent desktop version of <strong>Chrome, Edge, or Brave</strong> instead.
+  </div>
+  <div id="iframeBanner" class="banner banner-warn" hidden>
+    This page is running inside an embedded frame, which blocks folder access for security reasons.
+    Open the downloaded <code>.html</code> file directly in your browser (double-click it, or drag it into a browser window) to use the vault picker.
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Obsidian Vault Image Organizer</h1>
+        <p class="brand-sub">Audit, repair, consolidate, and clean up image references in an Obsidian vault</p>
+      </div>
+    </div>
+    <div class="vault-control">
+      <div id="vaultPill" class="vault-pill vault-pill-empty">
+        <span class="dot"></span>
+        <span id="vaultLabel">No vault selected</span>
+      </div>
+      <button id="btnReconnect" class="btn btn-ghost" hidden>Reconnect</button>
+      <button id="btnSelectVault" class="btn btn-primary">Select vault…</button>
+    </div>
+  </header>
+
+  <div class="settings-bar">
+    <label class="checkbox">
+      <input type="checkbox" id="skipSystemFolders" checked>
+      <span>Skip .git and .obsidian folders when scanning</span>
+    </label>
+    <div id="indexSummary" class="index-summary" hidden></div>
+  </div>
+
+  <nav class="steps" id="steps">
+    <button class="step active" data-step="audit"><span class="step-num">1</span><span>Audit</span></button>
+    <button class="step" data-step="repair"><span class="step-num">2</span><span>Repair</span></button>
+    <button class="step" data-step="consolidate"><span class="step-num">3</span><span>Consolidate</span></button>
+    <button class="step" data-step="cleanup"><span class="step-num">4</span><span>Cleanup</span></button>
+  </nav>
+
+  <main>
+
+    <!-- ============== AUDIT ============== -->
+    <section id="panel-audit" class="panel active">
+      <div class="panel-head">
+        <div>
+          <h2>Audit</h2>
+          <p class="panel-desc">Read-only. Shows every image reference in every note as clean, needing consolidation, broken, or an online link. Nothing is changed.</p>
+        </div>
+        <button id="btnRunAudit" class="btn btn-primary" disabled>Run audit</button>
+      </div>
+
+      <div id="auditProgress" class="progress" hidden>
+        <div class="progress-label"><span id="auditProgressText">Scanning…</span><span id="auditProgressPct"></span></div>
+        <div class="progress-track"><div class="progress-fill" id="auditProgressFill"></div></div>
+      </div>
+
+      <div id="auditStats" class="stat-grid" hidden>
+        <div class="stat-card"><div class="num" id="statMdFiles">0</div><div class="label">Markdown files</div></div>
+        <div class="stat-card"><div class="num" id="statTotalRefs">0</div><div class="label">Image refs</div></div>
+        <div class="stat-card tone-teal"><div class="num" id="statClean">0</div><div class="label">Clean</div></div>
+        <div class="stat-card tone-amber"><div class="num" id="statNeeds">0</div><div class="label">Needs consolidation</div></div>
+        <div class="stat-card tone-rust"><div class="num" id="statBroken">0</div><div class="label">Broken</div></div>
+        <div class="stat-card tone-neutral"><div class="num" id="statOnline">0</div><div class="label">Online</div></div>
+      </div>
+
+      <div id="auditEmpty" class="empty-state">Select a vault, then run an audit to see results here.</div>
+      <div id="auditResults" class="file-list"></div>
+      <div id="auditBroken" class="broken-list" hidden>
+        <h3>Broken references</h3>
+        <div id="auditBrokenRows"></div>
+      </div>
+    </section>
+
+    <!-- ============== REPAIR ============== -->
+    <section id="panel-repair" class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Repair</h2>
+          <p class="panel-desc">Searches the <strong>entire vault</strong> for any image a note references but can't find at the expected location, and fixes messy path syntax. Markdown files are never destroyed - see the safety notes below.</p>
+        </div>
+        <button id="btnScanRepairs" class="btn btn-primary" disabled>Scan for repairs</button>
+      </div>
+
+      <div class="callout">
+        <strong>How this stays safe:</strong>
+        <ul>
+          <li>Every note is backed up to <code id="repairBackupPath">.vault-organizer-backups/</code> before any change is written.</li>
+          <li>A write is <strong>refused outright</strong> if the result would be empty or less than half the original size - a note can never be wiped out by this tool.</li>
+          <li>Deterministic fixes (image found elsewhere in the vault by exact filename, or just a path-syntax cleanup) are pre-ticked, but you can untick any of them before applying.</li>
+          <li>Fuzzy "possible match" suggestions are <strong>never</strong> applied automatically - you must tick the box and confirm the right candidate yourself.</li>
+        </ul>
+      </div>
+
+      <div id="repairProgress" class="progress" hidden>
+        <div class="progress-label"><span id="repairProgressText">Scanning…</span><span id="repairProgressPct"></span></div>
+        <div class="progress-track"><div class="progress-fill" id="repairProgressFill"></div></div>
+      </div>
+
+      <div id="repairStats" class="stat-grid" hidden style="grid-template-columns:repeat(4, 1fr)">
+        <div class="stat-card"><div class="num" id="repairStatFiles">0</div><div class="label">Notes scanned</div></div>
+        <div class="stat-card tone-teal"><div class="num" id="repairStatFixable">0</div><div class="label">Fixable</div></div>
+        <div class="stat-card tone-amber"><div class="num" id="repairStatSuggestions">0</div><div class="label">Possible matches</div></div>
+        <div class="stat-card tone-rust"><div class="num" id="repairStatUnmatched">0</div><div class="label">Unmatched</div></div>
+      </div>
+
+      <div id="repairEmpty" class="empty-state">Run a scan to look for image references that can be repaired.</div>
+      <div id="repairResults" class="file-list" hidden>
+        <div class="list-toolbar">
+          <span class="summary">Review the proposed fixes below, then apply.</span>
+          <div class="actions">
+            <button class="btn btn-ghost btn-small" id="repairSelectAll">Select all fixes</button>
+            <button class="btn btn-ghost btn-small" id="repairSelectNone">Select none</button>
+            <button class="btn btn-primary btn-small" id="btnApplyRepairs">Apply selected</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== CONSOLIDATE ============== -->
+    <section id="panel-consolidate" class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Consolidate</h2>
+          <p class="panel-desc">Copies every referenced image into an <code>attachments/</code> folder next to its note, and rewrites references to <code>![[attachments/filename.ext]]</code>.</p>
+        </div>
+        <button id="btnRunConsolidate" class="btn btn-primary" disabled>Run consolidate</button>
+      </div>
+
+      <div class="callout warn">
+        <strong>This modifies your vault.</strong>
+        <ul>
+          <li>An <code>attachments/</code> folder is created next to every note that needs one.</li>
+          <li>Images are <strong>copied</strong>, not moved - originals are left in place.</li>
+          <li>Every local image reference is rewritten to the wiki-link form.</li>
+          <li>Broken references (image not found anywhere in the vault) are skipped and reported, never guessed at.</li>
+          <li>Every note is backed up before being rewritten, and a write is refused if it would shrink or empty the note.</li>
+        </ul>
+        You'll be asked to confirm before anything is written. Recommended order: Audit → Repair → Consolidate → Audit → Cleanup.
+      </div>
+
+      <div id="consolidateProgress" class="progress" hidden>
+        <div class="progress-label"><span id="consolidateProgressText">Processing…</span><span id="consolidateProgressPct"></span></div>
+        <div class="progress-track"><div class="progress-fill" id="consolidateProgressFill"></div></div>
+      </div>
+
+      <div id="consolidateStats" class="stat-grid" hidden>
+        <div class="stat-card"><div class="num" id="cStatMdProcessed">0</div><div class="label">Notes processed</div></div>
+        <div class="stat-card tone-accent"><div class="num" id="cStatMdModified">0</div><div class="label">Notes rewritten</div></div>
+        <div class="stat-card tone-teal"><div class="num" id="cStatClean">0</div><div class="label">Already clean</div></div>
+        <div class="stat-card tone-amber"><div class="num" id="cStatCopied">0</div><div class="label">Images copied</div></div>
+        <div class="stat-card tone-rust"><div class="num" id="cStatBroken">0</div><div class="label">Broken (skipped)</div></div>
+        <div class="stat-card tone-rust"><div class="num" id="cStatErrors">0</div><div class="label">Errors</div></div>
+      </div>
+      <div id="consolidateErrors" class="broken-list" hidden>
+        <h3>Error details</h3>
+        <div id="consolidateErrorRows"></div>
+      </div>
+    </section>
+
+    <!-- ============== CLEANUP ============== -->
+    <section id="panel-cleanup" class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Cleanup</h2>
+          <p class="panel-desc">Find image files nothing references any more, identical images that exist at more than one path, or empty folders left behind.</p>
+        </div>
+      </div>
+
+      <div class="subtabs">
+        <button class="subtab active" data-sub="orphans">Orphans</button>
+        <button class="subtab" data-sub="duplicates">Duplicates</button>
+        <button class="subtab" data-sub="emptyFolders">Empty folders</button>
+      </div>
+
+      <div id="sub-orphans" class="subpanel active">
+        <div class="panel-head">
+          <div><p class="panel-desc" style="margin-top:0">Images no note references - by filename or by path.</p></div>
+          <button id="btnScanOrphans" class="btn btn-primary" disabled>Scan for orphans</button>
+        </div>
+        <div id="orphansProgress" class="progress" hidden>
+          <div class="progress-label"><span id="orphansProgressText">Scanning…</span><span></span></div>
+          <div class="progress-track"><div class="progress-fill indeterminate"></div></div>
+        </div>
+        <div id="orphansEmpty" class="empty-state">Run a scan to find unreferenced images.</div>
+        <div id="orphansResults" hidden>
+          <div class="list-toolbar">
+            <span class="summary" id="orphansSummary"></span>
+            <div class="actions">
+              <button class="btn btn-ghost btn-small" id="orphansSelectAll">Select all</button>
+              <button class="btn btn-ghost btn-small" id="orphansSelectNone">Select none</button>
+              <button class="btn btn-danger btn-small" id="btnDeleteOrphans">Delete selected</button>
+            </div>
+          </div>
+          <table class="data-table">
+            <thead><tr><th style="width:30px"></th><th>Path</th><th style="width:90px">Size</th><th style="width:120px">Copies</th></tr></thead>
+            <tbody id="orphansTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="sub-duplicates" class="subpanel">
+        <div class="panel-head">
+          <div><p class="panel-desc" style="margin-top:0">Images with identical content at more than one path, grouped by a SHA-256 content hash.</p></div>
+          <button id="btnScanDuplicates" class="btn btn-primary" disabled>Scan for duplicates</button>
+        </div>
+        <div class="callout warn" style="margin-bottom:16px">
+          Run <strong>Consolidate</strong> first so every reference points at an <code>attachments/</code> copy - deleting duplicates beforehand can leave broken references in your notes.
+        </div>
+        <div id="duplicatesProgress" class="progress" hidden>
+          <div class="progress-label"><span id="duplicatesProgressText">Hashing files…</span><span id="duplicatesProgressPct"></span></div>
+          <div class="progress-track"><div class="progress-fill" id="duplicatesProgressFill"></div></div>
+        </div>
+        <div id="duplicatesEmpty" class="empty-state">Run a scan to find duplicate image content.</div>
+        <div id="duplicatesResults" hidden>
+          <div class="list-toolbar">
+            <span class="summary" id="duplicatesSummary"></span>
+            <div class="actions">
+              <button class="btn btn-ghost btn-small" id="dupSelectAllRedundant">Select all redundant copies</button>
+              <button class="btn btn-ghost btn-small" id="dupSelectNone">Select none</button>
+              <button class="btn btn-danger btn-small" id="btnDeleteDuplicates">Delete selected</button>
+            </div>
+          </div>
+          <div id="duplicateGroups"></div>
+        </div>
+      </div>
+
+      <div id="sub-emptyFolders" class="subpanel">
+        <div class="panel-head">
+          <div><p class="panel-desc" style="margin-top:0">Folders that contain nothing at all, recursively - no notes, no images, no other files. <code>.git</code>, <code>.obsidian</code>, and the backups folder are never scanned or removed.</p></div>
+          <button id="btnScanEmptyFolders" class="btn btn-primary" disabled>Scan for empty folders</button>
+        </div>
+        <div id="emptyFoldersProgress" class="progress" hidden>
+          <div class="progress-label"><span id="emptyFoldersProgressText">Scanning…</span><span></span></div>
+          <div class="progress-track"><div class="progress-fill indeterminate"></div></div>
+        </div>
+        <div id="emptyFoldersEmpty" class="empty-state">Run a scan to find empty folders.</div>
+        <div id="emptyFoldersResults" hidden>
+          <div class="list-toolbar">
+            <span class="summary" id="emptyFoldersSummary"></span>
+            <div class="actions">
+              <button class="btn btn-ghost btn-small" id="emptyFoldersSelectAll">Select all</button>
+              <button class="btn btn-ghost btn-small" id="emptyFoldersSelectNone">Select none</button>
+              <button class="btn btn-danger btn-small" id="btnDeleteEmptyFolders">Delete selected</button>
+            </div>
+          </div>
+          <div id="emptyFoldersList" class="file-group" style="overflow:hidden"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="log-drawer" id="logDrawer">
+    <button class="log-toggle" id="logToggle">▸ Activity log <span id="logCount">0</span></button>
+    <div class="log-body" id="logBody"></div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h2 id="modalTitle"></h2>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        <button class="btn btn-danger" id="modalConfirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+<script src="core.js"></script>
+<script src="features.js"></script>
+</body>
+</html>
