@@ -28,6 +28,8 @@ Recommended order: **Audit → Repair → Consolidate → Audit → Cleanup**.
 
 A recent desktop version of **Chrome, Edge, or Brave**. The File System Access API isn't supported in Firefox or Safari, and the vault picker won't work inside an embedded frame.
 
+> **Note:** Chrome refuses to grant a website access to a few specific folders even if you pick them - your whole Home directory, Desktop, or Documents folder (any *subfolder* inside them is fine, only those exact folders are blocked). If you select your vault and nothing seems to happen, this is almost always why: either move the vault out of one of those folders, or select a subfolder one level in instead.
+
 ## Running it
 
 The app is just static files (`index.html`, `styles.css`, `core.js`, `features.js`), but it needs to be served over `http://` (not opened directly as a `file://` URL) for the vault picker to work reliably.

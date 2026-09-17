@@ -175,6 +175,7 @@
 
   btnSelectVault.addEventListener('click', function () {
     if (!supported) return;
+    var pickerOpenedAt = Date.now();
     window.showDirectoryPicker({ mode: 'readwrite' }).then(function (handle) {
       state.rootHandle = handle;
       setVaultConnected(handle.name);
@@ -182,7 +183,22 @@
       log('Vault selected: ' + handle.name, 'ok');
       return idbSet('lastVault', handle);
     }).catch(function (e) {
-      if (e && e.name !== 'AbortError') log('Could not open folder: ' + e.message, 'err');
+      if (!e || e.name !== 'AbortError') {
+        log('Could not open folder: ' + e.message, 'err');
+        return;
+      }
+      // Chrome throws this exact same AbortError both when the user simply
+      // cancels the dialog AND when it refuses to grant access to a folder
+      // it treats as too sensitive - specifically the whole home directory,
+      // Desktop, or Documents folder (subfolders inside them are fine, only
+      // the folder itself is blocked). Both cases are indistinguishable by
+      // error name alone, but a dialog closed instantly is almost always a
+      // real cancel, while one that took real browsing time before
+      // "succeeding" silently is almost always this block - so use elapsed
+      // time as a heuristic to warn only in the latter case.
+      if (Date.now() - pickerOpenedAt > 800) {
+        log('Folder picker closed without selecting a vault. If you picked your Home, Desktop, or Documents folder directly, Chrome blocks sharing those specific folders for security - pick a subfolder instead (e.g. the vault folder one level in), or move the vault out of them.', 'warn');
+      }
     });
   });
 
