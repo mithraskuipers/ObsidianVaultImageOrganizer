@@ -765,9 +765,14 @@
       return VO.buildReferenceSets().then(function (sets) {
         var toDelete = [];
         selected.forEach(function (s) {
-          var stillReferenced = sets.referencedNames.has(s.entry.name.toLowerCase()) || sets.referencedPaths.has(s.entry.path.toLowerCase());
+          // Duplicates share content (and often a filename) with the
+          // canonical copy being kept, so a name-based "is this filename
+          // referenced anywhere" check is always true and would block
+          // every deletion. What actually matters is whether some
+          // reference resolves specifically to *this* redundant path.
+          var stillReferenced = sets.resolvedPaths.has(s.entry.path.toLowerCase());
           if (stillReferenced) {
-            log('Skipped delete (now referenced): ' + s.entry.path, 'warn');
+            log('Skipped delete (still resolves to this file): ' + s.entry.path, 'warn');
           } else {
             toDelete.push(s);
           }

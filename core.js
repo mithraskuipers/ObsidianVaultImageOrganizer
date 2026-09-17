@@ -459,11 +459,26 @@
 
   // ===========================================================================
   // Reference sets - every name/path referenced by any note (used by Cleanup
-  // to decide what's orphaned).
+  // to decide what's orphaned), plus resolvedPaths - the set of *specific*
+  // physical file paths that references currently resolve to, via the same
+  // resolveRef logic Audit uses.
+  //
+  // referencedNames/referencedPaths answer "is this filename/path mentioned
+  // anywhere?" - a broad, conservative check that's correct for Orphans
+  // (ambiguity about which same-named file a bare wikilink points to should
+  // block deletion of every copy sharing that name). It is the wrong check
+  // for Duplicates: redundant copies routinely share a filename with the
+  // canonical copy being kept (e.g. a Consolidate leftover), so
+  // referencedNames ends up true for them too even though deleting them is
+  // the entire point. resolvedPaths instead records which *specific* file
+  // each reference currently resolves to, so a redundant duplicate is only
+  // treated as still needed when something genuinely resolves to that exact
+  // path.
   // ===========================================================================
   function buildReferenceSets() {
     var referencedNames = new Set();
     var referencedPaths = new Set();
+    var resolvedPaths = new Set();
     var n = state.mdFiles.length;
     var i = 0;
     function step() {
@@ -473,6 +488,8 @@
         parseRefs(content).filter(function (r) { return !r.isOnline; }).forEach(function (ref) {
           referencedNames.add(ref.fileName.toLowerCase());
           if (ref.relPath) referencedPaths.add(normalizeRelative(md.dirPath, ref.relPath).toLowerCase());
+          var resolved = resolveRef(ref, md.dirPath);
+          if (resolved.found) resolvedPaths.add(resolved.sourcePath.toLowerCase());
         });
         i++;
         return step();
@@ -482,7 +499,7 @@
         return step();
       });
     }
-    return step().then(function () { return { referencedNames: referencedNames, referencedPaths: referencedPaths }; });
+    return step().then(function () { return { referencedNames: referencedNames, referencedPaths: referencedPaths, resolvedPaths: resolvedPaths }; });
   }
 
   // ===========================================================================
